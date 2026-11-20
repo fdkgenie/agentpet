@@ -21,10 +21,32 @@ public struct ToolActivityInput: Decodable, Equatable, Sendable {
         self.prompt = prompt; self.subagentType = subagentType
     }
 
-    enum CodingKeys: String, CodingKey {
-        case filePath = "file_path"
-        case command, description, pattern, query, url, prompt
-        case subagentType = "subagent_type"
+    public init(from decoder: Decoder) throws {
+        struct DynamicKey: CodingKey {
+            var stringValue: String
+            var intValue: Int?
+            init?(stringValue: String) { self.stringValue = stringValue; self.intValue = nil }
+            init?(intValue: Int) { self.stringValue = "\(intValue)"; self.intValue = intValue }
+        }
+        let container = try decoder.container(keyedBy: DynamicKey.self)
+        func findString(_ candidates: [String]) -> String? {
+            for c in candidates {
+                if let key = DynamicKey(stringValue: c),
+                   let val = try? container.decodeIfPresent(String.self, forKey: key) {
+                    let trimmed = val.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !trimmed.isEmpty { return trimmed }
+                }
+            }
+            return nil
+        }
+        self.filePath = findString(["file_path", "filePath", "path", "Path"])
+        self.command = findString(["command", "CommandLine", "command_line", "cmd"])
+        self.description = findString(["description", "toolSummary", "tool_summary", "summary"])
+        self.pattern = findString(["pattern"])
+        self.query = findString(["query", "q"])
+        self.url = findString(["url", "uri"])
+        self.prompt = findString(["prompt", "Prompt"])
+        self.subagentType = findString(["subagent_type", "subagentType", "role", "Role", "type"])
     }
 }
 
@@ -174,8 +196,35 @@ public enum ActivityTheme: String, CaseIterable, Codable, Sendable {
 /// Vocabulary is controlled by `currentTheme` (default: `.chef`).
 public enum ActivityFormatter {
 
-    /// Set from `BubbleSettings.activityTheme.didSet` on the main thread.
-    public nonisolated(unsafe) static var currentTheme: ActivityTheme = .chef
+    /// Loads the stored activity theme from user preferences (checking the app suite first
+    /// so CLI helper processes invoked by agent hooks pick up the GUI's selection).
+    public static func loadStoredTheme() {
+        let ud: UserDefaults = {
+            if Bundle.main.bundleIdentifier == "com.agentpet.app" {
+                return UserDefaults.standard
+            }
+            return UserDefaults(suiteName: "com.agentpet.app") ?? UserDefaults.standard
+        }()
+        if let raw = ud.string(forKey: "agentpet.bubble.activityTheme"),
+           let theme = ActivityTheme(rawValue: raw) {
+            currentTheme = theme
+        }
+    }
+
+    /// Set from `BubbleSettings.activityTheme.didSet` on the main thread, or loaded from preferences.
+    public nonisolated(unsafe) static var currentTheme: ActivityTheme = {
+        let ud: UserDefaults = {
+            if Bundle.main.bundleIdentifier == "com.agentpet.app" {
+                return UserDefaults.standard
+            }
+            return UserDefaults(suiteName: "com.agentpet.app") ?? UserDefaults.standard
+        }()
+        if let raw = ud.string(forKey: "agentpet.bubble.activityTheme"),
+           let theme = ActivityTheme(rawValue: raw) {
+            return theme
+        }
+        return .chef
+    }()
 
     public static func activityMessage(
         eventName: String,

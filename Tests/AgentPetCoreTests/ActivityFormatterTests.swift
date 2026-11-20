@@ -158,6 +158,11 @@ final class ActivityFormatterTests: XCTestCase {
 
     // MARK: - Literal theme & action formatting
 
+    override func setUp() {
+        super.setUp()
+        ActivityFormatter.currentTheme = .chef
+    }
+
     override func tearDown() {
         super.tearDown()
         ActivityFormatter.currentTheme = .chef
